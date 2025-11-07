@@ -1,6 +1,10 @@
+import time
 import uvicorn
 import pybreaker
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import PlainTextResponse
+from src.agents.memory import get_memory_agent
+from src.agents.master_router import llm, supervisor, pretty_print_messages
 from pydantic import BaseModel
 
 app = FastAPI()
@@ -16,16 +20,34 @@ class QueryRequest(BaseModel):
 @breaker
 def get_agentic_response(request: QueryRequest):
     try:
-        response = "Hello, World!"
-        return response
+        st = time.time()
+        session_id = "default-session"
+        memory_agent, memory = get_memory_agent(llm=llm, session_id=session_id)
+
+        for chunk in supervisor.stream({
+            "messages": [
+                {"role": "user", "content": request.query}
+            ]
+        }):
+            pretty_print_messages(chunk)
+        final_message_history = chunk["supervisor"]["messages"]
+        print("user: ", request.query)
+        print("assistant: ", final_message_history[1].dict()['content'])
+        memory.save_context({"input": request.query}, {"output": final_message_history[1].dict()['content']})
+        print("memory: ", memory.load_memory_variables({})["chat_history"])
+        response = final_message_history[1].dict()['content']
+
+        print(f"time taken {time.time()-st}")
+        return PlainTextResponse(response)
     except:
         raise HTTPException(status_code=504, detail="🔴 No response from downstream service (timeout or unreachable).")
+
 
 @app.post("/query")
 def query_endpoint(request: QueryRequest):
     try:
         response = get_agentic_response(request)
-        return response
+        return PlainTextResponse(response)
     except pybreaker.CircuitBreakerError:
         raise HTTPException(status_code=503, detail="🔴 Service temporarily unavailable (circuit open).")
         
