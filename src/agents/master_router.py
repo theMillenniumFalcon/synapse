@@ -5,6 +5,10 @@ import time
 from dotenv import load_dotenv
 from langchain_together import ChatTogether
 load_dotenv()
+from src.agents.search import get_search_agent
+from src.agents.intent import get_intent_agent
+from src.agents.instruction import get_instruction_agent
+from src.agents.conversation import get_conversation_agent
 from src.agents.memory import get_memory_agent
 st = time.time()
 
@@ -15,6 +19,10 @@ llm = ChatTogether(
     api_key=os.getenv("TOGETHER_API_KEY")
 )
 
+search_agent = get_search_agent(llm)
+intent_agent = get_intent_agent(llm)
+instruction_agent = get_instruction_agent(llm)
+conversation_agent = get_conversation_agent(llm)
 memory_agent, _ = get_memory_agent(llm, session_id="default-session")
 
 llm2 = ChatOllama(
@@ -29,12 +37,17 @@ def pretty_print_messages(msg_chunk):
 
 supervisor = create_supervisor(
     model=llm,
-    agents=[memory_agent],
+    agents=[search_agent, intent_agent,instruction_agent,conversation_agent,memory_agent],
     prompt=(
-        "You are a supervisor managing one agent:\n"
+        "You are a supervisor managing five agents:\n"
+        "- a search agent. Assign search-related tasks to this agent\n"
+        "- an intent agent. Assign intent and emotion detection and classification related tasks to this agent\n"
+        "- an instruction_agent. Assign instructions related tasks to this agent and make sure it completes all instructions."
+        "- a conversation_agent. Assign conversation flow realted tasks to this agent."
         "- a memory agent. Assign task to retrieve relevant chat history/context"
-        " Give the final output answer by getting all the results from all agents and return it to the user."
+        " Give the final output answer by getting all the results from all agents"
         "Assign agents in parallel.\n"
+        "Do not do any work yourself."
     ),
     add_handoff_back_messages=True,
     output_mode="full_history",
